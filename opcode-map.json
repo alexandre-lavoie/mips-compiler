@@ -1,6 +1,17 @@
 {
     "addi": {
+        "type": "i",
+        "opcode": "0x8",
+        "format": ["rs", "rt", "imm"]
+    },
+    "lb": {
+        "type": "i",
         "opcode": "0x20",
-        "funct": "0x00"
+        "format": ["rt", "imm", "rs"]
+    },
+    "sb": {
+        "type": "i",
+        "opcode": "0x28",
+        "format": ["rt", "imm", "rs"]
     }
 }
