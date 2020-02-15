@@ -1,3 +1,0 @@
-addi    r1,r1,0xF
-sb      r1,0(r2)
-lb      r3,0(r2)

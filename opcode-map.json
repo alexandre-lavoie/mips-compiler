@@ -1,17 +1,47 @@
 {
+    "add": {
+        "type": "r",
+        "funct": "0x20",
+        "format": ["rd", "rs", "rt"]
+    },
     "addi": {
         "type": "i",
         "opcode": "0x8",
         "format": ["rs", "rt", "imm"]
+    },
+    "addu": {
+        "type": "r",
+        "funct": "0x21",
+        "format": ["rd", "rs", "rt"]
+    },
+    "addiu": {
+        "type": "i",
+        "opcode": "0x9",
+        "format": ["rs", "rt", "imm"]
+    },
+    "multu": {
+        "type": "r",
+        "funct": "0x19",
+        "format": ["rd", "rs", "rt"]
     },
     "lb": {
         "type": "i",
         "opcode": "0x20",
         "format": ["rt", "imm", "rs"]
     },
+    "lw": {
+        "type": "i",
+        "opcode": "0x23",
+        "format": ["rt", "imm", "rs"]
+    },
     "sb": {
         "type": "i",
         "opcode": "0x28",
+        "format": ["rt", "imm", "rs"]
+    },
+    "sw": {
+        "type": "i",
+        "opcode": "0x2B",
         "format": ["rt", "imm", "rs"]
     }
 }

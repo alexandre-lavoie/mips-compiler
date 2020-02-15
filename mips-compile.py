@@ -1,27 +1,43 @@
 import sys
 import json
 import re
+from utils import word_string_to_byte, byte_string_to_byte
+from mips import get_i_type, get_j_type, get_r_type
 
-def con2binflip(n):
-    s = ""
+def parse_by_section(f):
+    current_section = None
+    sections = {'.reg': [], '.data': [], '.main': []}
 
-    if n[:2] == '0x':
-        s = str(bin(int(n, 16)))
-    elif n[:2] == '0b':
-        s = n
-    else:
-        s = str(bin(int(n, 10)))
+    with open(f, 'r') as handle:
+        line = handle.readline()
 
-    return s.split('b')[-1][::-1]
+        while line:
+            # Remove comments
+            if '//' in line:
+                line = line[:line.index('//')]
 
-def get_r_type(rs, rt, rd, shamt, funct):
-    return bytes.fromhex('%08x' % int("0b000000" + con2binflip(rs).ljust(5, '0') + con2binflip(rt).ljust(5, '0') + con2binflip(rd).ljust(5, '0') + con2binflip(shamt).ljust(5, '0') + con2binflip(funct).ljust(6, '0'), 2))
+            if not line.isspace():
+                # Remove redundant spaces.
+                line = re.sub(r'  +' , ' ', line.strip())
+                
+                # Split command according to spaces
+                line_split = [x.lower() for x in line.split(' ')]
 
-def get_i_type(opcode, rs, rt, imm):
-    return bytes.fromhex('%08x' % int("0b" + con2binflip(opcode).ljust(6, '0') + con2binflip(rs).ljust(5, '0') + con2binflip(rt).ljust(5, '0') + con2binflip(imm).ljust(16, '0'), 2))
+                # Gets opcode and trailing args
+                opcode = line_split[0]
+                operators = ''.join(line_split[1:])
 
-def get_j_type(opcode, rel, address):
-    return bytes.fromhex('%08x' % int("0b" + con2binflip(opcode).ljust(6, '0') + con2binflip(rel).ljust(4, '0') + con2binflip(address).ljust(address, '22')))
+                # If the opcode is a section, change section
+                # Else insert code into section
+                if opcode in sections.keys():
+                    current_section = opcode
+                else:
+                    sections[current_section].append((opcode, operators))
+                
+            # Read next line
+            line = handle.readline()
+    
+    return sections
 
 if len(sys.argv) < 2:
     print("Usage: mips-compile.py FILE [OUTPUT]")
@@ -34,41 +50,66 @@ output_file = "./build/out.bin"
 if len(sys.argv) >= 3:
     output_file = sys.argv[2]
 
-with open(sys.argv[1], 'r') as input_handle:
-    with open(output_file, 'wb') as output_handle:
-        line = input_handle.readline()
+# Parse file
 
-        line_number = 1
+file_parsed_by_section = parse_by_section(sys.argv[1])
 
-        while line:
-            line = re.sub(r'  +' , ' ', line.strip())
+# Handles read data
 
-            if '//' in line:
-                line = line[:line.index('//')]
+queue = {x: b'' for x in file_parsed_by_section.keys()}
 
-            line_split = [x.lower() for x in line.split(' ')]
+# Handle data section
 
-            opcode = line_split[0]
-            operators = ''.join(line_split[1:])
+sections_not_main = []
 
-            operators = re.sub(r'\((.*?)\)', r',\1', operators)
-            operators = operators.replace('r', '')
-            operators = operators.split(',')
+for (section, statements) in filter(lambda x: not x == '.map', file_parsed_by_section.items()):
+    for statement in statements:
+        sections_not_main.append((section, statement))
 
-            if not opcode in opcode_dict:
-                print("Unknown operator %s on line %d" % (opcode, line_number))
-                exit()
+for (section, (opcode, operator)) in sections_not_main:
+    if opcode == '.word':
+        for n in operator.split(','):
+            queue[section] += word_string_to_byte(n)
+    elif opcode == '.byte':
+        for n in operator.split(','):
+            queue[section] += byte_string_to_byte(n)
+    elif opcode == '.space':
+        for _ in range(int(operator)):
+            queue[section] += b'\x00'
+
+# Handles main section
+code_line_number = 1
+
+for (opcode, operators) in file_parsed_by_section['.main']:
+    opr = str(operators)
+    opr = re.sub(r'\((.*?)\)', r',\1', opr)
+    opr = opr.replace('r', '')
+    opr = opr.split(',')
+
+    if not opcode in opcode_dict:
+        print("Unknown operator %s on line %d" % (opcode, code_line_number))
+        exit()
+
+    opcode_def = opcode_dict[opcode]
+
+    form = dict(zip(opcode_def['format'], opr))
+
+    if(opcode_def['type'].lower() == 'i'):
+        queue['.main'] += get_i_type(opcode_def['opcode'], form['rs'], form['rt'], form['imm'])
+    elif(opcode_def['type'].lower() == 'r'):
+        queue['.main'] += get_r_type(form['rs'], form['rt'], form['rd'], form['shamt'] if 'shamt' in form else 0, opcode_def['funct'])
+    elif(opcode_def['type'].lower() == 'j'):
+        queue['.main'] += get_j_type(opcode_def['opcode'], form['rel'], form['address'])
             
-            opcode_def = opcode_dict[opcode]
+    code_line_number += 1
 
-            form = dict(zip(opcode_def['format'], operators))
-            
-            if(opcode_def['type'].lower() == 'i'):
-                output_handle.write(get_i_type(opcode_def['opcode'], form['rs'], form['rt'], form['imm']))
-            elif(opcode_def['type'].lower() == 'r'):
-                output_handle.write(get_r_type(form['rs'], form['rt'], form['rd'], form['shamt'], opcode_def['funct']))
-            elif(opcode_def['type'].lower() == 'j'):
-                output_handle.write(get_j_type(opcode_def['opcode'], form['rel'], form['address']))
-            
-            line_number += 1
-            line = input_handle.readline()
+# Writes file
+
+with open(output_file, 'wb') as output_handle:
+    output_handle.write(b'MIPS')
+    output_handle.write(word_string_to_byte(len(queue['.reg'])))
+    output_handle.write(word_string_to_byte(len(queue['.data'])))
+    output_handle.write(word_string_to_byte(len(queue['.main'])))
+    output_handle.write(queue['.reg'])
+    output_handle.write(queue['.data'])
+    output_handle.write(queue['.main'])
